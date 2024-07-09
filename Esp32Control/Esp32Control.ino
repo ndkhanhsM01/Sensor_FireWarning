@@ -5,13 +5,13 @@ const char* fireWarningSignal = "FIRE";
 const char* gasWarningSignal = "GAS";
 
 // Thông tin WiFi
-const char* ssid = "Đình Khánh"; // Thay bằng SSID WiFi của bạn
-const char* password = "13578642"; // Thay bằng mật khẩu WiFi của bạn
+const char* ssid = "MI 8 SE"; // Thay bằng SSID WiFi của bạn
+const char* password = "12345678923"; // Thay bằng mật khẩu WiFi của bạn
 
 // Thông tin HTTP Request
 const char* httpsRequest = "https://warningfire-notice.onrender.com/notify";
-const char* requestFireWarning = "{\"message\":\"FIRE\"}";
-const char* requestGasWarning = "{\"message\":\"GAS\"}";
+const char* requestFireWarning = "{\"type\": \"WARNING\",\"message\":\"FIRE\"}";
+const char* requestGasWarning = "{\"type\": \"WARNING\",\"message\":\"GAS\"}";
 
 // Chân LED WiFi
 const int ledWifi = 32;
@@ -125,9 +125,13 @@ void handleFireWarning(void * parameter) {
         }
       }
     }
-    delay(500);
+    else{
+      Serial.println("Something wrong");
+    }
+    //delay(500);
   }
 }
+
 
 void pingpongLedWifi() {
   digitalWrite(ledWifi, HIGH); 

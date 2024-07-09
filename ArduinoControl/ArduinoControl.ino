@@ -1,12 +1,14 @@
 #include <Arduino_FreeRTOS.h>
 #include <semphr.h>
+#include <LiquidCrystal_I2C.h> 
+#include <Wire.h>
 // input
 const int firePin = A0; // cảm biến lửa
 const int gasPin = A1; // cảm biến khí gas
 
 // output
 const int alertPin = 8; // Chân kết nối với Buzzer hoặc LED cảnh báo
-
+LiquidCrystal_I2C lcd(0x27,  16, 2);
 // config values
 const int intervalWarning = 10000;
 const int fireThreshold = 100; // Ngưỡng để phát hiện lửa (điều chỉnh tùy theo cảm biến)
@@ -23,7 +25,7 @@ volatile int gasValue = 0;
 
 TaskHandle_t taskReadSensor;
 TaskHandle_t taskHandleFireData;
-
+TaskHandle_t taskDisplayData;
 void setup() {
   RegistIO();
   Serial.begin(9600); // Khởi động Serial giao tiếp với ESP32
@@ -37,6 +39,12 @@ void loop(){
 }
 
 void RegistIO(){
+  lcd.init();        
+  lcd.backlight();
+  lcd.print("Fire: ");
+  lcd.setCursor(0, 1);
+  lcd.print("Gas: ");
+
   pinMode(firePin, INPUT); // Cấu hình chân firePin làm đầu vào
   pinMode(gasPin, INPUT); // 
   pinMode(alertPin, OUTPUT); // Cấu hình chân alertPin làm đầu ra
@@ -64,6 +72,14 @@ void RegistTasks(){
     &taskHandleFireData // Con trỏ xử lý tác vụ
   );
 
+  xTaskCreate(
+    HandleDisplayData, // Hàm thực hiện tác vụ
+    "Display Data", // Tên tác vụ
+    128, // Kích thước ngăn xếp (đơn vị là từ)
+    NULL, // Tham số truyền vào tác vụ
+    1, // Độ ưu tiên tác vụ
+    &taskDisplayData // Con trỏ xử lý tác vụ
+  );
 }
 
 // Tác vụ đọc cảm biến
@@ -106,3 +122,24 @@ void HandleFireData(void *pvParameters) {
     }
   }
 }
+
+void HandleDisplayData(void *pvParameters) {
+  (void) pvParameters;
+
+  while (true) {
+    xSemaphoreTake(xSemaphore, portMAX_DELAY);
+
+    lcd.setCursor(6, 0);
+    lcd.print(fireValue);
+    lcd.print("  "); // Xóa các ký tự thừa nếu có
+
+    lcd.setCursor(5, 1);
+    lcd.print(gasValue);
+    lcd.print("  "); // Xóa các ký tự thừa nếu có
+
+    xSemaphoreGive(xSemaphore);
+
+    vTaskDelay(1000 / portTICK_PERIOD_MS); // Đợi 1000ms trước khi cập nhật lại
+  }
+}
+
