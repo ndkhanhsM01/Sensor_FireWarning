@@ -2,16 +2,14 @@
 #include <HTTPClient.h>
 
 const char* fireWarningSignal = "FIRE";
-const char* gasWarningSignal = "GAS";
 
 // Thông tin WiFi
-const char* ssid = "MI 8 SE"; // Thay bằng SSID WiFi của bạn
-const char* password = "12345678923"; // Thay bằng mật khẩu WiFi của bạn
+const char* ssid = "MI 8 SE"; 
+const char* password = "12345678923";
 
 // Thông tin HTTP Request
 const char* httpsRequest = "https://warningfire-notice.onrender.com/notify";
 const char* requestFireWarning = "{\"type\": \"WARNING\",\"message\":\"FIRE\"}";
-const char* requestGasWarning = "{\"type\": \"WARNING\",\"message\":\"GAS\"}";
 
 // Chân LED WiFi
 const int ledWifi = 32;
@@ -27,7 +25,7 @@ void setup() {
 
   Serial.begin(9600); // Khởi động Serial giao tiếp với Arduino
   Serial.println("ESP32 ready");
-
+  requested = false;
   RegistIO();
   digitalWrite(ledWifi, LOW); 
 
@@ -92,31 +90,14 @@ void handleFireWarning(void * parameter) {
       message.trim(); // Loại bỏ các khoảng trắng ở đầu và cuối chuỗi
       Serial.println("Message from Arduino: " + message);
 
-      if (message == fireWarningSignal || message == gasWarningSignal) {
+      if (message == fireWarningSignal) {
         xSemaphoreTake(xSemaphore, portMAX_DELAY);
         requested = true;
         xSemaphoreGive(xSemaphore);
 
         // Gửi yêu cầu HTTP
         if (WiFi.status() == WL_CONNECTED) {
-          HTTPClient http;
-          http.begin(httpsRequest); // Thay bằng URL của bạn
-
-          http.addHeader("Content-Type", "application/json");
-
-          const char* reqBody = message == fireWarningSignal ? requestFireWarning : requestGasWarning;
-          int httpResponseCode = http.POST(reqBody);
-
-          Serial.println("Code: " + String(httpResponseCode));
-          if (httpResponseCode == 200) {
-            String response = http.getString();
-            Serial.println("HTTP Response code: " + String(httpResponseCode));
-            Serial.println("Response: " + response);
-          } else {
-            Serial.println("Error on HTTP request");
-          }
-
-          http.end();
+          SendRequestWarning();
           xSemaphoreTake(xSemaphore, portMAX_DELAY);
           requested = false;
           xSemaphoreGive(xSemaphore);
@@ -126,12 +107,32 @@ void handleFireWarning(void * parameter) {
       }
     }
     else{
-      Serial.println("Something wrong");
+      //Serial.println("Something wrong");
     }
     //delay(500);
   }
 }
 
+void SendRequestWarning(){
+  HTTPClient http;
+  http.begin(httpsRequest); 
+
+  http.addHeader("Content-Type", "application/json");
+
+  const char* reqBody = requestFireWarning ;
+  int httpResponseCode = http.POST(reqBody);
+
+  Serial.println("Code: " + String(httpResponseCode));
+  if (httpResponseCode == 200) {
+    String response = http.getString();
+    Serial.println("HTTP Response code: " + String(httpResponseCode));
+    Serial.println("Response: " + response);
+  } else {
+    Serial.println("Error on HTTP request");
+  }
+
+  http.end();
+}
 
 void pingpongLedWifi() {
   digitalWrite(ledWifi, HIGH); 
