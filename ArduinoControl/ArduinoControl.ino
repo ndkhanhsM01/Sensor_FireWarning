@@ -2,6 +2,7 @@
 #include <semphr.h>
 #include <LiquidCrystal_I2C.h> 
 #include <Wire.h>
+#include <timers.h>
 // input
 const byte firePin = A0; // cảm biến lửa
 
@@ -19,14 +20,17 @@ volatile int fireValue = 0;
 volatile bool isFireDetected = false; 
 
 TaskHandle_t taskReadSensor;
-TaskHandle_t taskHandleFireData;
 TaskHandle_t taskDisplayData;
-TaskHandle_t taskHandleWarning;
+
+TimerHandle_t oneshotTimer;
 void setup() {
   RegistIO();
   Serial.begin(9600); // Khởi động Serial giao tiếp với ESP32
   
-  xSemaphore = xSemaphoreCreateMutex();
+  xSemaphore = xSemaphoreCreateBinary();
+  if (xSemaphore != NULL) {
+    xSemaphoreGive(xSemaphore);  // Giải phóng semaphore
+  }
   isFireDetected = false;
   RegistTasks();
 }
@@ -54,7 +58,11 @@ void RegistTasks(){
   // Tạo tác vụ hiển thị dữ liệu
   xTaskCreate(HandleDisplayData, "Display Data", 128, NULL, 2, &taskDisplayData);
 
-  xTaskCreate(HandleWarning, "Handle Warning", 128, NULL, 2, &taskHandleWarning);
+  oneshotTimer = xTimerCreate("OneShot", pdMS_TO_TICKS(3000), pdFALSE, (void *)0, vTimerCallback);
+  if (oneshotTimer == NULL) {
+
+      Serial.println("Failed to create timer");
+  }
 }
 
 // Tác vụ đọc cảm biến
@@ -65,48 +73,47 @@ void HandleReadSensor(void *pvParameters) {
     xSemaphoreTake(xSemaphore, portMAX_DELAY);
     fireValue = analogRead(firePin);
     xSemaphoreGive(xSemaphore);
+
     // show fire value
     Serial.print("Sensor Value: ");
     Serial.println(fireValue); // Hiển thị giá trị đọc được từ cảm biến trên Serial Monitor
     Serial.println("--------");
 
-    xSemaphoreTake(xSemaphore, portMAX_DELAY);
     if (!isFireDetected && fireValue < fireThreshold) { // Kiểm tra xem giá trị có vượt ngưỡng hay không
       Serial.println("ok");
-      isFireDetected = true;
+      isFireDetected = true; // Đặt cờ báo hiệu phát hiện lửa
+      if (xTimerReset(oneshotTimer, 0) != pdPASS) {
+          
+        Serial.println("Failed to reset timer");
+      }
+      Warning();
     }
-    xSemaphoreGive(xSemaphore);
+    vTaskDelay(500 / portTICK_PERIOD_MS); // Thêm delay để tránh vòng lặp quá nhanh
   }
 }
 
-// Tác vụ canh bao
-void HandleWarning(void *pvParameters) {
-  (void) pvParameters;
+// Hàm callback của timer để tắt LED
+void vTimerCallback(TimerHandle_t xTimer) {
+    BackToNormalState();
+}
 
-  while(true){
-    if(isFireDetected){
-      isFireDetected = false;
-      xSemaphoreTake(xSemaphore, portMAX_DELAY);
-      vTaskSuspend(taskReadSensor);
-      Serial.println("");
-      Serial.println(fireWarning); // Gửi tín hiệu cảnh báo lửa đến ESP32
-      digitalWrite(alertPin, HIGH); // Bật Buzzer hoặc LED cảnh báo
+void Warning() {
+  Serial.println("");
+  Serial.println(fireWarning); // Gửi tín hiệu cảnh báo lửa đến ESP32
+  digitalWrite(alertPin, HIGH); // Bật Buzzer hoặc LED cảnh báo
 
-      lcd.setCursor(3, 1);
-      lcd.print("--FIRE--");
-      
-      vTaskDelay(3000 / portTICK_PERIOD_MS); // Cảnh báo trong 3 giây
+  
+  vTaskSuspend(taskReadSensor); // warning xong thi tam dung doc du lieu
+}
 
-      // end
-      isFireDetected = false;
-      digitalWrite(alertPin, LOW); // Tắt Buzzer hoặc LED cảnh báo
+void BackToNormalState(){
+  // end
+  xSemaphoreTake(xSemaphore, portMAX_DELAY);
+  isFireDetected = false;
+  xSemaphoreGive(xSemaphore);
+  digitalWrite(alertPin, LOW); // Tắt Buzzer hoặc LED cảnh báo
 
-      lcd.setCursor(3, 1);
-      lcd.print("--NORMAL--");
-      vTaskResume(taskReadSensor);
-      xSemaphoreGive(xSemaphore);
-    }
-  }
+  vTaskResume(taskReadSensor);
 }
 
 void HandleDisplayData(void *pvParameters) {
@@ -118,16 +125,14 @@ void HandleDisplayData(void *pvParameters) {
     lcd.print(fireValue);
     lcd.print("  "); // Xóa các ký tự thừa nếu có
 
-    // status
-    lcd.setCursor(0, 1);
-    /*if (isFireDetected) {
+    if(isFireDetected){
+      lcd.setCursor(3, 1);
       lcd.print("--FIRE--");
-    } else {
+    }
+    else{
+      lcd.setCursor(3, 1);
       lcd.print("--NORMAL--");
-    }*/
-    //xSemaphoreGive(xSemaphore);
-
-    vTaskDelay(200 / portTICK_PERIOD_MS);
+    }
   }
 }
 
